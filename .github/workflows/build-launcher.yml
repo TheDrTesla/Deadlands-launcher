@@ -1,0 +1,82 @@
+name: Build launcher
+
+# Push a tag like "launcher-v1.0.1" to build and publish a new launcher.
+# (Game builds are published here automatically from the private repo as "game-v..." releases.)
+
+on:
+  push:
+    tags: ["launcher-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Launcher version (e.g. 1.0.1)"
+        required: true
+
+env:
+  GODOT_VERSION: "4.7.2"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out version
+        id: ver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${GITHUB_REF_NAME#launcher-v}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=launcher-v$V" >> "$GITHUB_OUTPUT"
+          sed -i "s/^config\/version=.*/config\/version=\"$V\"/" launcher/project.godot
+
+      - name: Cache Godot
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-win-linux-template
+
+      - name: Install Godot + Windows and Linux export templates
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable"
+          mkdir -p ~/godot
+          curl -fsSL -o /tmp/godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          curl -fsSL -o /tmp/templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$dest"
+          unzip -j -q /tmp/templates.tpz templates/windows_release_x86_64.exe templates/linux_release.x86_64 templates/version.txt -d "$dest"
+          rm /tmp/templates.tpz
+
+      - name: Export launcher
+        working-directory: launcher
+        run: |
+          ~/godot/godot --headless --path . --import
+          mkdir -p build
+          ~/godot/godot --headless --path . --export-release "Windows Desktop" build/TheDeadlandsLauncher.exe
+          ~/godot/godot --headless --path . --export-release "Linux" build/TheDeadlandsLauncher.x86_64
+          cd build
+          # A tarball keeps the executable bit, which a bare download would lose
+          chmod +x TheDeadlandsLauncher.x86_64
+          tar -czf TheDeadlandsLauncher-linux.tar.gz TheDeadlandsLauncher.x86_64
+          sha256sum TheDeadlandsLauncher.exe > TheDeadlandsLauncher.exe.sha256
+          sha256sum TheDeadlandsLauncher-linux.tar.gz > TheDeadlandsLauncher-linux.tar.gz.sha256
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.ver.outputs.tag }}" \
+            launcher/build/TheDeadlandsLauncher.exe launcher/build/TheDeadlandsLauncher.exe.sha256 \
+            launcher/build/TheDeadlandsLauncher-linux.tar.gz launcher/build/TheDeadlandsLauncher-linux.tar.gz.sha256 \
+            --title "Launcher ${{ steps.ver.outputs.version }}" \
+            --notes "Windows: download **TheDeadlandsLauncher.exe** and run it. Linux: download **TheDeadlandsLauncher-linux.tar.gz**, extract it and run **TheDeadlandsLauncher.x86_64**. It installs the game and keeps it up to date automatically." \
+            --target "${{ github.sha }}" \
+            --latest
