@@ -50,7 +50,9 @@ var _game_buttons: Dictionary = {}    # game id -> Button
 var _status: Label
 var _bar: ProgressBar
 var _play: Button
+var _update: Button
 var _repair: Button
+var _path: Label
 var _notes: RichTextLabel
 var _version: Label
 var _banner: Button
@@ -118,6 +120,20 @@ func _ready() -> void:
 	_notes.add_theme_font_size_override("normal_font_size", 15)
 	nv.add_child(_notes)
 
+	var path_row := HBoxContainer.new()
+	path_row.add_theme_constant_override("separation", 12)
+	root.add_child(path_row)
+	_path = _label("", 13, MUTED)
+	_path.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_path.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_path.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	path_row.add_child(_path)
+	var open := Button.new()
+	open.text = "Open folder"
+	open.tooltip_text = "Show the game's files on this computer"
+	open.pressed.connect(_open_folder)
+	path_row.add_child(open)
+
 	_status = _label("Starting...", 15, TEXT)
 	root.add_child(_status)
 	var bottom := HBoxContainer.new()
@@ -134,8 +150,13 @@ func _ready() -> void:
 	_repair.text = "Repair"
 	_repair.tooltip_text = "Re-download and re-verify the game files"
 	_repair.custom_minimum_size = Vector2(110, 52)
-	_repair.pressed.connect(func(): _run_update(true))
+	_repair.pressed.connect(func(): _install(true))
 	bottom.add_child(_repair)
+	_update = Button.new()
+	_update.tooltip_text = "Download and install the new version"
+	_update.custom_minimum_size = Vector2(180, 52)
+	_update.pressed.connect(func(): _install(false))
+	bottom.add_child(_update)
 	_play = Button.new()
 	_play.text = "PLAY"
 	_play.custom_minimum_size = Vector2(200, 52)
@@ -168,7 +189,7 @@ func _select_game(id: String) -> void:
 	_status.remove_theme_color_override("font_color")
 	_banner.visible = false
 	_save_game(id)
-	_run_update(false)
+	_check()
 
 func _saved_game() -> String:
 	if FileAccess.file_exists(SETTINGS_PATH):
@@ -193,39 +214,96 @@ func _on_progress(f: float) -> void:
 	if not _indeterminate:
 		_bar.value = f
 
-func _run_update(force: bool) -> void:
+## Looks for updates to the selected game without downloading anything
+func _check() -> void:
 	if _busy:
 		return
-	_busy = true
-	_play.disabled = true
-	_repair.disabled = true
-	_set_picker_disabled(true)
-	var res: Dictionary = await updater.check_and_update(force)
-	_busy = false
-	_set_picker_disabled(false)
+	_lock(true)
+	var res: Dictionary = await updater.check()
+	_lock(false)
+	_show(res)
+
+## Downloads the version the last check found, or with `force` re-downloads the game
+func _install(force: bool) -> void:
+	if _busy:
+		return
+	_lock(true)
+	var res := {"ok": true}
+	if force:
+		res = await updater.check(true)
+	if res["ok"] and not updater.pending.is_empty():
+		res = await updater.install()
+		if not res["ok"]:
+			updater.files_ok = updater.installed_ok()
+	_lock(false)
+	_show(res)
+
+func _lock(on: bool) -> void:
+	_busy = on
+	_play.disabled = on
+	_update.disabled = on
+	_repair.disabled = on
+	for id in _game_buttons:
+		_game_buttons[id].disabled = on and id != _game
+
+## Shows the selected game's state after a check or install. res is {"ok", "message"}.
+func _show(res: Dictionary) -> void:
 	_indeterminate = false
-	_bar.value = 1.0 if res["ok"] else 0.0
-	_status.text = res["message"]
-	_status.add_theme_color_override("font_color", GOOD if res["ok"] else BAD)
-	_play.disabled = not res["ok"]
-	_repair.disabled = false
+	var has_game := updater.is_installed()
+	var new := updater.pending
+	var msg: String = res["message"]
+	var ok: bool = res["ok"]
+	if not has_game:
+		if ok and not new.is_empty():
+			msg = "Not installed. Version %s is ready to download (%s)." % [new["version"], _size(new["size"])]
+		elif not ok:
+			msg += " The game can't be installed right now."
+	elif not updater.files_ok:
+		msg = "Game files are damaged. Click Repair." if ok else msg + " Game files are damaged; click Repair when you're back online."
+		ok = false
+	elif not new.is_empty():
+		msg = "Version %s is available (%s). Click Update to install it, or play version %s." \
+			% [new["version"], _size(new["size"]), updater.installed_version()]
+	elif not ok:
+		msg += " Playing installed version %s." % updater.installed_version()
+		ok = true
+	_bar.value = 1.0 if ok and new.is_empty() and has_game else 0.0
+	_status.text = msg
+	_status.add_theme_color_override("font_color", GOOD if ok else BAD)
+
+	_play.text = "PLAY" if has_game else "INSTALL"
+	_play.disabled = new.is_empty() if not has_game else not updater.files_ok
+	_update.visible = has_game and updater.files_ok and not new.is_empty()
+	if _update.visible:
+		_update.text = "Update to %s" % new["version"]
+	_repair.visible = has_game
+	_path.text = ("Installed in: %s" if has_game else "Will be installed in: %s") % updater.install_path()
+
 	var mine: String = ProjectSettings.get_setting("application/config/version")
-	_version.text = "Game %s\nLauncher %s" % [updater.installed_version() if updater.installed_version() != "" else "—", mine]
+	_version.text = "Game %s\nLauncher %s" % [updater.installed_version() if has_game else "—", mine]
 	if updater.release_notes != "":
 		_notes.text = updater.release_notes
 	elif not res["ok"]:
-		_notes.text = "Once a build is published it will be downloaded here automatically."
+		_notes.text = "Once a build is published you can install it here."
 	else:
 		_notes.text = "Patch notes are unavailable while offline."
 	if not updater.launcher_update.is_empty():
 		_banner.text = "A new launcher (%s) is available — click to download" % updater.launcher_update["tag_name"]
 		_banner.visible = true
 
-func _set_picker_disabled(disabled: bool) -> void:
-	for id in _game_buttons:
-		_game_buttons[id].disabled = disabled and id != _game
+static func _size(bytes) -> String:
+	return "%.1f MB" % (float(bytes) / 1048576.0)
+
+func _open_folder() -> void:
+	var p := ProjectSettings.globalize_path(updater.install_dir)
+	if not DirAccess.dir_exists_absolute(p):
+		p = p.get_base_dir()   # not installed yet: the game's own folder already exists
+	OS.shell_open(p)
 
 func _on_play() -> void:
+	if not updater.is_installed():
+		_install(false)
+		return
 	if not updater.installed_ok():
 		_status.text = "Game files are damaged. Click Repair."
 		_status.add_theme_color_override("font_color", BAD)

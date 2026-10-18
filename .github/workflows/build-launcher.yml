@@ -78,6 +78,6 @@ jobs:
             launcher/build/TeslaGamesLauncher.exe launcher/build/TeslaGamesLauncher.exe.sha256 \
             launcher/build/TeslaGamesLauncher-linux.tar.gz launcher/build/TeslaGamesLauncher-linux.tar.gz.sha256 \
             --title "Launcher ${{ steps.ver.outputs.version }}" \
-            --notes "Windows: download **TeslaGamesLauncher.exe** and run it. Linux: download **TeslaGamesLauncher-linux.tar.gz**, extract it and run **TeslaGamesLauncher.x86_64**. Pick a game: the launcher installs it and keeps it up to date automatically." \
+            --notes "Windows: download **TeslaGamesLauncher.exe** and run it. Linux: download **TeslaGamesLauncher-linux.tar.gz**, extract it and run **TeslaGamesLauncher.x86_64**. Pick a game and press INSTALL; the launcher tells you when an update is out." \
             --target "${{ github.sha }}" \
             --latest

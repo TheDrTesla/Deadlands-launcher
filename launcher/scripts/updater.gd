@@ -86,6 +86,9 @@ var state_path: String
 
 var api_base := "https://api.github.com"
 var installed: Dictionary = {}       # manifest of the installed build
+var files_ok := false                # installed build's files matched their hashes at the last check
+var pending: Dictionary = {}         # verified manifest of a build that check() found to install, if any
+var _pending_release: Dictionary = {}
 var release_notes := ""
 var launcher_update: Dictionary = {} # newer launcher release, if any
 var _downloading: HTTPRequest
@@ -135,71 +138,111 @@ func installed_ok() -> bool:
 func installed_version() -> String:
 	return str(installed.get("version", ""))
 
+## True when a build has been installed and its executable is still there
+func is_installed() -> bool:
+	return not installed.is_empty() and FileAccess.file_exists(game_exe_path())
+
 func game_exe_path() -> String:
 	return ProjectSettings.globalize_path(install_dir + "/" + str(installed.get("exe", "")))
+
+## The folder on this computer the game is (or will be) installed in
+func install_path() -> String:
+	var p := ProjectSettings.globalize_path(install_dir)
+	return p.replace("/", "\\") if OS.get_name() == "Windows" else p
 
 ## Checks for a new release and installs it. Returns {"ok": bool, "message": String}.
 ## ok = true means a verified build is installed and ready to play.
 func check_and_update(force_reinstall := false) -> Dictionary:
+	var res := await check(force_reinstall)
+	var local_ok := files_ok and not force_reinstall
+	if not res["ok"]:
+		return _fallback(local_ok, res["message"])
+	if pending.is_empty():
+		return res
+	res = await install()
+	if not res["ok"]:
+		return _fallback(installed_ok(), res["message"])
+	return res
+
+## Looks for a newer release without downloading the game. Returns {"ok": bool, "message": String};
+## ok = false means the check itself failed. Afterwards `pending` holds the verified manifest of
+## the build to install (newer than the installed one, or any build when nothing usable is
+## installed or `force_reinstall` is set), or is empty when the game is up to date.
+func check(force_reinstall := false) -> Dictionary:
 	load_installed()
+	pending = {}
+	_pending_release = {}
 	status.emit("Verifying installed files...")
 	progress.emit(-1)
-	var local_ok := installed_ok() and not force_reinstall
+	files_ok = installed_ok()
+	var local_ok := files_ok and not force_reinstall
 
 	status.emit("Checking for updates...")
 	var res := await _fetch("%s/repos/%s/releases?per_page=100" % [api_base, REPO])
 	if not res["ok"]:
-		return _fallback(local_ok, "Could not reach the update server (%s)." % res["error"])
+		return _failed("Could not reach the update server (%s)." % res["error"])
 	var releases = JSON.parse_string(res["body"].get_string_from_utf8())
 	if typeof(releases) != TYPE_ARRAY:
-		return _fallback(local_ok, "Update server sent an unexpected reply.")
+		return _failed("Update server sent an unexpected reply.")
 
 	var game_rel := _newest(releases, game_tag_prefix)
 	_check_launcher(releases)
 	if game_rel.is_empty():
-		return _fallback(local_ok, "No game build has been published yet.")
+		return _failed("No game build has been published yet.")
 	release_notes = str(game_rel.get("body", ""))
 
-	# 1. Download and verify the signed manifest
+	# Download and verify the signed manifest
 	var manifest_asset := _asset(game_rel, manifest_name)
 	var sig_asset := _asset(game_rel, signature_name)
 	if manifest_asset.is_empty() or sig_asset.is_empty():
-		return _fallback(local_ok, "Latest release is missing its signature files.")
+		return _failed("Latest release is missing its signature files.")
 	var m_res := await _fetch(manifest_asset["browser_download_url"])
 	var s_res := await _fetch(sig_asset["browser_download_url"])
 	if not m_res["ok"] or not s_res["ok"]:
-		return _fallback(local_ok, "Could not download release information.")
+		return _failed("Could not download release information.")
 	if not verify_signature(m_res["body"], s_res["body"]):
-		return _fallback(local_ok, "SECURITY: the latest release failed signature verification and was ignored.")
+		return _failed("SECURITY: the latest release failed signature verification and was ignored.")
 	var manifest = JSON.parse_string(m_res["body"].get_string_from_utf8())
 	if not _manifest_valid(manifest, game_rel):
-		return _fallback(local_ok, "Release manifest is invalid.")
+		return _failed("Release manifest is invalid.")
 
-	# 2. Already up to date? (also refuses to "update" to an older build)
+	# Already up to date? (also refuses to "update" to an older build)
+	progress.emit(1.0)
 	if local_ok and int(manifest["build"]) <= int(installed.get("build", 0)):
 		return {"ok": true, "message": "Up to date — version %s" % installed_version()}
+	pending = manifest
+	_pending_release = game_rel
+	return {"ok": true, "message": "Version %s is available." % manifest["version"]}
 
-	# 3. Download the game archive
-	var zip_asset := _asset(game_rel, manifest["file"])
+## Downloads and installs the build check() found. Returns {"ok": bool, "message": String}.
+func install() -> Dictionary:
+	if pending.is_empty():
+		return {"ok": false, "message": "Nothing to install. Check for updates first."}
+	var manifest := pending
+	var was_installed := is_installed()
+
+	# 1. Download the game archive
+	var zip_asset := _asset(_pending_release, manifest["file"])
 	if zip_asset.is_empty() or int(zip_asset.get("size", -1)) != int(manifest["size"]):
-		return _fallback(local_ok, "Release archive is missing or the wrong size.")
+		return {"ok": false, "message": "Release archive is missing or the wrong size."}
 	status.emit("Downloading version %s..." % manifest["version"])
+	progress.emit(0.0)
 	var dl := await _download(zip_asset["browser_download_url"], download_path, int(manifest["size"]))
 	if not dl["ok"]:
-		return _fallback(local_ok, "Download failed (%s)." % dl["error"])
+		return {"ok": false, "message": "Download failed (%s)." % dl["error"]}
 	status.emit("Verifying download...")
 	progress.emit(-1)
 	if FileAccess.get_sha256(download_path) != manifest["sha256"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(download_path))
-		return _fallback(local_ok, "SECURITY: downloaded file does not match the signed checksum.")
+		return {"ok": false, "message": "SECURITY: downloaded file does not match the signed checksum."}
 
-	# 4. Extract to a staging folder, verify every file, then swap it in
+	# 2. Extract to a staging folder, verify every file, then swap it in
 	status.emit("Installing...")
 	var err := _extract(download_path, staging_dir, manifest["files"])
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(download_path))
 	if err != "":
 		_remove_dir(staging_dir)
-		return _fallback(local_ok, err)
+		return {"ok": false, "message": err}
 	if platform == "linux":
 		# Zip extraction doesn't keep the executable bit
 		FileAccess.set_unix_permissions(ProjectSettings.globalize_path(staging_dir + "/" + str(manifest["exe"])),
@@ -213,8 +256,11 @@ func check_and_update(force_reinstall := false) -> Dictionary:
 	f.store_string(JSON.stringify(manifest, "\t"))
 	f.close()
 	load_installed()
+	files_ok = true
+	pending = {}
+	_pending_release = {}
 	progress.emit(1.0)
-	return {"ok": true, "message": "Updated to version %s" % installed_version()}
+	return {"ok": true, "message": ("Updated to version %s" if was_installed else "Installed version %s") % installed_version()}
 
 ## RSA-SHA256 check of `data` against `signature` using the embedded public key
 func verify_signature(data: PackedByteArray, signature: PackedByteArray) -> bool:
@@ -231,6 +277,10 @@ func verify_signature(data: PackedByteArray, signature: PackedByteArray) -> bool
 func _fallback(local_ok: bool, why: String) -> Dictionary:
 	if local_ok:
 		return {"ok": true, "message": why + " Playing installed version %s." % installed_version()}
+	return {"ok": false, "message": why}
+
+func _failed(why: String) -> Dictionary:
+	progress.emit(0.0)
 	return {"ok": false, "message": why}
 
 func _newest(releases: Array, prefix: String) -> Dictionary:

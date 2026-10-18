@@ -1,6 +1,6 @@
 # Tesla Games
 
-One launcher for all of TheDrTesla's games. Pick a game, and the launcher installs it and keeps it up to date.
+One launcher for all of TheDrTesla's games. Pick a game, install it, and the launcher tells you when there's an update.
 
 | Game | |
 |---|---|
@@ -15,8 +15,8 @@ One launcher for all of TheDrTesla's games. Pick a game, and the launcher instal
 **[Download the launcher (Windows)](https://github.com/TheDrTesla/Tesla-Games-launcher/releases/latest/download/TeslaGamesLauncher.exe)**
 
 1. Run `TeslaGamesLauncher.exe`.
-2. Pick a game at the top. The launcher downloads it the first time, and installs any update each time you start it.
-3. Press **PLAY**.
+2. Pick a game at the top and press **INSTALL**. Only the games you install are downloaded.
+3. Press **PLAY**. When a new version is out, the launcher tells you and shows its patch notes; press **Update** when you want it, or keep playing the version you have.
 
 > **Windows SmartScreen:** the launcher isn't code-signed yet, so Windows may say *"Windows protected your PC"*. Click **More info → Run anyway**.
 
@@ -26,7 +26,7 @@ One launcher for all of TheDrTesla's games. Pick a game, and the launcher instal
 
 1. Extract it: `tar -xzf TeslaGamesLauncher-linux.tar.gz`
 2. Run `./TeslaGamesLauncher.x86_64` (or double-click it in your file manager).
-3. Pick a game. The launcher downloads it the first time, and installs any update each time you start it. Press **PLAY**.
+3. Pick a game and press **INSTALL**, then **PLAY**. Updates are installed only when you press **Update**.
 
 ### Coming from the old Deadlands or Ctrl+Alt+Salvage launcher?
 
@@ -42,9 +42,9 @@ Every game build is signed by the developer, and each game has its own key. Befo
 - refuses to install files outside the game's folder, and
 - never "updates" to an older build.
 
-If any check fails, the update is ignored and your current version keeps working. If your game files get damaged, the launcher notices and re-downloads them (or press **Repair**).
+If any check fails, the update is ignored and your current version keeps working. If your game files get damaged, the launcher notices and asks you to press **Repair**, which downloads them again.
 
-Each game is installed in `%APPDATA%\TeslaGamesLauncher\games\<game>\game` (Linux: `~/.local/share/TeslaGamesLauncher/games/<game>/game`). Saves live separately in each game's own folder (`%APPDATA%\TheDeadlands`, `%APPDATA%\CtrlAltSalvage`, `%APPDATA%\LuckyPinball`; Linux: under `~/.local/share/`) and are never touched by updates.
+The launcher shows where each game is installed, with an **Open folder** button. By default that's `%APPDATA%\TeslaGamesLauncher\games\<game>\game` (Linux: `~/.local/share/TeslaGamesLauncher/games/<game>/game`). Saves live separately in each game's own folder (`%APPDATA%\TheDeadlands`, `%APPDATA%\CtrlAltSalvage`, `%APPDATA%\LuckyPinball`; Linux: under `~/.local/share/`) and are never touched by updates.
 
 ---
 
