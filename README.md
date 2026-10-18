@@ -6,6 +6,7 @@ One launcher for all of TheDrTesla's games. Pick a game, and the launcher instal
 |---|---|
 | **The Deadlands** | *The world burned. You are a robot built from salvage, wandering what's left. Defeat other machines, tear off their parts and bolt them onto yourself, and fight your way across the Deadlands to recover the one thing that can bring the world back to life.* |
 | **Ctrl+Alt+Salvage** | *Forty years after the Collapse, the machines woke up. You are UNIT K-7, a salvage robot searching the Dead Zone for the Verdant Core, the device that could bring the planet back to life.* |
+| **Lucky Pinball** | *Pick a pinball table and play. The first one is the Dead Zone: knock the scrap raiders flat, fill the Salvage Cache for multiball, and hit the Sawbot for the jackpot. More tables are on the way.* |
 
 ## Download
 
@@ -43,7 +44,7 @@ Every game build is signed by the developer, and each game has its own key. Befo
 
 If any check fails, the update is ignored and your current version keeps working. If your game files get damaged, the launcher notices and re-downloads them (or press **Repair**).
 
-Each game is installed in `%APPDATA%\TeslaGamesLauncher\games\<game>\game` (Linux: `~/.local/share/TeslaGamesLauncher/games/<game>/game`). Saves live separately in each game's own folder (`%APPDATA%\TheDeadlands`, `%APPDATA%\CtrlAltSalvage`; Linux: under `~/.local/share/`) and are never touched by updates.
+Each game is installed in `%APPDATA%\TeslaGamesLauncher\games\<game>\game` (Linux: `~/.local/share/TeslaGamesLauncher/games/<game>/game`). Saves live separately in each game's own folder (`%APPDATA%\TheDeadlands`, `%APPDATA%\CtrlAltSalvage`, `%APPDATA%\LuckyPinball`; Linux: under `~/.local/share/`) and are never touched by updates.
 
 ---
 
@@ -56,6 +57,7 @@ This repo holds the launcher source (`launcher/`, a Godot 4.7 project) and hosts
 | `launcher-v*` | The launcher players download | This repo's workflow, when you push a `launcher-v1.2.3` tag |
 | `deadlands-v*` | Signed The Deadlands builds (Windows zip + `manifest.json`, Linux zip + `manifest-linux.json`, each manifest signed); release notes are the game's `PATCH_NOTES.md` | `Tesla-games`' `release-the-deadlands.yml`, on every push to `main` that changes `the-deadlands/` |
 | `salvage-v*` | Signed Ctrl+Alt+Salvage builds, same layout | `Tesla-games`' `release-ctrl-alt-salvage.yml`, on every push to `main` that changes `ctrl-alt-salvage/` |
+| `pinball-v*` | Signed Lucky Pinball builds, same layout | `Tesla-games`' `release-lucky-pinball.yml`, on every push to `main` that changes `lucky-pinball/` |
 | `game-v*` | Old The Deadlands builds from before the move, kept for launchers 1.x | Nobody any more |
 
 The games, their tag prefixes and their public keys are listed in `GAMES` in `launcher/scripts/updater.gd`; the colours and background of each game's page are in `LOOKS` in `launcher/scripts/launcher.gd`. Adding a game means an entry in both and a new launcher release. The launcher contains no passwords or tokens, only public keys.

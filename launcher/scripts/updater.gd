@@ -53,6 +53,21 @@ m05DMuyDFzz+WotJ7NzKBiNoJUn89DRsosy/fmJfFQPPBP429CRU2w3HC4rgXJDE
 7GpZ7HY77ZLLGnwJiBQOea9bV6SehiAQ7HQqkTA5zVxlAgMBAAE=
 -----END PUBLIC KEY-----""",
 	},
+	"lucky-pinball": {
+		"title": "Lucky Pinball",
+		"tag_prefix": "pinball-v",
+		"public_key": """-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA1CtXArQtbc4MfSQsuaAW
+IDsSUAt4S2fTo36nfYK+17zQkgu6zBe3KXskH/BrsS0PCyuPqQIqcVbWCpw3+fyI
+KZxDOVOVgpiLUY/McO3Ld45dkbT1vGuK+LaRXqF3tYInPS7aSNQ/oDc+z6duSIjV
+S2hzbsdPZxIN0ClTRGCVS7u9OzbzSvGboXhFZ9r9qw1c5fy4x3ihgX6TRZ0woWya
+NDO+T7BFP2K2Jl16I9RmxizTn3rUnX6eAYD1WkNqLvFrtjUBXZCoPYGI0I5TxgDX
++aXXTiN3i6WyiKYyIV0fZxNbTOAzogpdnxtV+G6QbPih7cKlHJhXNhi/lPHu5ku2
+SsoZAR8s3vJwVRL2D7ZYmaSGvPu67ISFX31WlXBOJ42mEyIH7nJlSvJhMaO2LUeO
+ijhTZYrI39rblKszvwUvQQ3hqHRuno13kGTsELzNMlTSwK+6B2GdKuZBlO8EacMt
+pQtNrPkkD0OBKlhQ+EQG+eAIyvkaiXnh7zMcawbCUBrZAgMBAAE=
+-----END PUBLIC KEY-----""",
+	},
 }
 # Each game release carries one signed manifest per platform. Windows keeps the
 # original name so launchers already out there keep working.

@@ -30,6 +30,15 @@ const LOOKS := {
 		"skyline": false,
 		"waiting": "Checking for news from the Dead Zone...",
 	},
+	"lucky-pinball": {
+		"accent": Color("#ffc53d"),
+		"bg": Color("#0b0814"),
+		"sky": Color("#2a1238"),
+		"glow": Color(0.9, 0.3, 0.8, 0.04),
+		"sun": Color(1.0, 0.75, 0.25, 0.4),
+		"skyline": false,
+		"waiting": "Polishing the flippers...",
+	},
 }
 
 var updater: Updater                  # the selected game's
