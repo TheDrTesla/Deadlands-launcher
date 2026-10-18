@@ -1,11 +1,14 @@
 class_name Updater
 extends Node
-## Keeps the installed game in sync with the latest signed release.
+## Keeps one installed game in sync with its latest signed release.
+## Create one per game: Updater.new("the-deadlands"). The games are listed in GAMES.
 ##
 ## Security model:
-##  * The launcher holds NO secrets. It only knows the PUBLIC half of the release key.
+##  * The launcher holds NO secrets. It only knows the PUBLIC half of each game's release key.
 ##  * Each game release ships manifest.json + manifest.json.sig. The signature is made
-##    in CI with the private key (a GitHub secret). We verify it before trusting anything.
+##    in CI with that game's private key (a GitHub secret). We verify it before trusting anything.
+##  * A release only counts for a game if its tag has that game's prefix, it is signed with
+##    that game's key, and its manifest names that game.
 ##  * The manifest pins the SHA-256 of the zip and of every file inside it, so a
 ##    modified or corrupted download is rejected.
 ##  * Older builds are never installed over newer ones (no rollback attacks).
@@ -13,21 +16,17 @@ extends Node
 signal status(text: String)
 signal progress(fraction: float)   # 0..1, or -1 when unknown
 
-const REPO := "TheDrTesla/Deadlands-launcher"
-const GAME_TAG_PREFIX := "game-v"
+const REPO := "TheDrTesla/Tesla-Games-launcher"
 const LAUNCHER_TAG_PREFIX := "launcher-v"
-# Each game release carries one signed manifest per platform. Windows keeps the
-# original name so launchers already out there keep working.
-var platform := "linux" if OS.get_name() == "Linux" else "windows"
-var manifest_name := "manifest-linux.json" if platform == "linux" else "manifest.json"
-var signature_name := manifest_name + ".sig"
 
-const INSTALL_DIR := "user://game"
-const STAGING_DIR := "user://game_staging"
-const DOWNLOAD_PATH := "user://download.zip"
-const STATE_PATH := "user://installed.json"
-
-const PUBLIC_KEY := """-----BEGIN PUBLIC KEY-----
+## Every game the launcher offers, in the order they're shown. The id matches the game's
+## folder in the Tesla-games repo and the "game" field of its manifests; tag_prefix matches
+## its release workflow there.
+const GAMES := {
+	"the-deadlands": {
+		"title": "The Deadlands",
+		"tag_prefix": "deadlands-v",
+		"public_key": """-----BEGIN PUBLIC KEY-----
 MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAqIVw1czO6e17Oe1a+3W0
 nksFNeAdvFqzovaQxf/5xQikOSc1h/he1es60IzSga+7dvix7Su4KXeGWDxsJkR6
 Y38kVAk6P2uVq/PWBCqZHRMW1siISbU/kAvDYZHTGUL+5fSq1/+g4Ic3WsqXjWwp
@@ -37,7 +36,38 @@ sCUPbV7Mxj4Oe0p+k8HTlac/iwIlKDRTCOHIKxl4JmgSpTK3/uuwKmMx7hUrK4aN
 1/5UsBjQCPw25iAtZ/jxiCIux3QVM7AEOxat7VViEtijO+sCRDTrCtP8Z8B39Oya
 jtxAoquF4JWuRDH/UKCdDyl9sSSqM9j5EbiHs7M5ZMBifowOP9Zb1WwLnupq98z0
 XC5aEHBFtGgB1qaf6U+vmSxvZE4JIPrKo6/l832339uTAgMBAAE=
------END PUBLIC KEY-----"""
+-----END PUBLIC KEY-----""",
+	},
+	"ctrl-alt-salvage": {
+		"title": "Ctrl+Alt+Salvage",
+		"tag_prefix": "salvage-v",
+		"public_key": """-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA7V38qKtPopGWUTTFRVsb
+krCzB6mwFKHjU2F2TZLgctdYOh6rIzGzt80OZ8CZxz2mVCy8YtwUEfIDaE0UleHr
+O0k+tO0TMcy0u3SMp99dp0BlvvnNc3Nlbxl5PaiAHCX49PkkjwOBWvJTTvn85z3o
+WF+FfRphyFMgBuTbQzNFV0ztj7wi3blFDAVJfxzKrS/PoZZoA0xpftjxk8H3VM1m
++ilF+LKHuHWUGoW+ggvGTBPnhD+Tbw6EfiamzEw4gfFiZCTq87kfnc/y7I3QVNja
+VRt/fIPLI3aBl29mgCmpa3T/P24M/yaNDFYYApCOqER9NG/h1fXlif7nm07i1t9q
+QPCJIMumxCTvEQupa78GQ7R/TtemWXsDwkGswhi3fXW5msC3kp4AKoIKZ8LLpxQi
+m05DMuyDFzz+WotJ7NzKBiNoJUn89DRsosy/fmJfFQPPBP429CRU2w3HC4rgXJDE
+7GpZ7HY77ZLLGnwJiBQOea9bV6SehiAQ7HQqkTA5zVxlAgMBAAE=
+-----END PUBLIC KEY-----""",
+	},
+}
+# Each game release carries one signed manifest per platform. Windows keeps the
+# original name so launchers already out there keep working.
+var platform := "linux" if OS.get_name() == "Linux" else "windows"
+var manifest_name := "manifest-linux.json" if platform == "linux" else "manifest.json"
+var signature_name := manifest_name + ".sig"
+
+var game_id: String
+var game_tag_prefix: String
+var public_key: String
+# Each game gets its own folder: user://games/<id>/
+var install_dir: String
+var staging_dir: String
+var download_path: String
+var state_path: String
 
 var api_base := "https://api.github.com"
 var installed: Dictionary = {}       # manifest of the installed build
@@ -45,6 +75,18 @@ var release_notes := ""
 var launcher_update: Dictionary = {} # newer launcher release, if any
 var _downloading: HTTPRequest
 var _download_total := 0
+
+func _init(id: String) -> void:
+	assert(GAMES.has(id), "Unknown game " + id)
+	game_id = id
+	game_tag_prefix = GAMES[id]["tag_prefix"]
+	public_key = GAMES[id]["public_key"]
+	var base := "user://games/" + id
+	install_dir = base + "/game"
+	staging_dir = base + "/game_staging"
+	download_path = base + "/download.zip"
+	state_path = base + "/installed.json"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(base))
 
 func _ready() -> void:
 	# Debug builds can point at a local test server: --api=http://127.0.0.1:8765
@@ -60,8 +102,8 @@ func _process(_delta: float) -> void:
 # --- Public API -------------------------------------------------------------------
 func load_installed() -> void:
 	installed = {}
-	if FileAccess.file_exists(STATE_PATH):
-		var data = JSON.parse_string(FileAccess.get_file_as_string(STATE_PATH))
+	if FileAccess.file_exists(state_path):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(state_path))
 		if typeof(data) == TYPE_DICTIONARY:
 			installed = data
 
@@ -70,7 +112,7 @@ func installed_ok() -> bool:
 	if installed.is_empty() or not installed.has("files"):
 		return false
 	for f in installed["files"]:
-		var p: String = INSTALL_DIR + "/" + f
+		var p: String = install_dir + "/" + f
 		if not FileAccess.file_exists(p) or FileAccess.get_sha256(p) != installed["files"][f]:
 			return false
 	return true
@@ -79,7 +121,7 @@ func installed_version() -> String:
 	return str(installed.get("version", ""))
 
 func game_exe_path() -> String:
-	return ProjectSettings.globalize_path(INSTALL_DIR + "/" + str(installed.get("exe", "")))
+	return ProjectSettings.globalize_path(install_dir + "/" + str(installed.get("exe", "")))
 
 ## Checks for a new release and installs it. Returns {"ok": bool, "message": String}.
 ## ok = true means a verified build is installed and ready to play.
@@ -90,14 +132,14 @@ func check_and_update(force_reinstall := false) -> Dictionary:
 	var local_ok := installed_ok() and not force_reinstall
 
 	status.emit("Checking for updates...")
-	var res := await _fetch("%s/repos/%s/releases?per_page=30" % [api_base, REPO])
+	var res := await _fetch("%s/repos/%s/releases?per_page=100" % [api_base, REPO])
 	if not res["ok"]:
 		return _fallback(local_ok, "Could not reach the update server (%s)." % res["error"])
 	var releases = JSON.parse_string(res["body"].get_string_from_utf8())
 	if typeof(releases) != TYPE_ARRAY:
 		return _fallback(local_ok, "Update server sent an unexpected reply.")
 
-	var game_rel := _newest(releases, GAME_TAG_PREFIX)
+	var game_rel := _newest(releases, game_tag_prefix)
 	_check_launcher(releases)
 	if game_rel.is_empty():
 		return _fallback(local_ok, "No game build has been published yet.")
@@ -127,32 +169,32 @@ func check_and_update(force_reinstall := false) -> Dictionary:
 	if zip_asset.is_empty() or int(zip_asset.get("size", -1)) != int(manifest["size"]):
 		return _fallback(local_ok, "Release archive is missing or the wrong size.")
 	status.emit("Downloading version %s..." % manifest["version"])
-	var dl := await _download(zip_asset["browser_download_url"], DOWNLOAD_PATH, int(manifest["size"]))
+	var dl := await _download(zip_asset["browser_download_url"], download_path, int(manifest["size"]))
 	if not dl["ok"]:
 		return _fallback(local_ok, "Download failed (%s)." % dl["error"])
 	status.emit("Verifying download...")
 	progress.emit(-1)
-	if FileAccess.get_sha256(DOWNLOAD_PATH) != manifest["sha256"]:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(DOWNLOAD_PATH))
+	if FileAccess.get_sha256(download_path) != manifest["sha256"]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(download_path))
 		return _fallback(local_ok, "SECURITY: downloaded file does not match the signed checksum.")
 
 	# 4. Extract to a staging folder, verify every file, then swap it in
 	status.emit("Installing...")
-	var err := _extract(DOWNLOAD_PATH, STAGING_DIR, manifest["files"])
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(DOWNLOAD_PATH))
+	var err := _extract(download_path, staging_dir, manifest["files"])
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(download_path))
 	if err != "":
-		_remove_dir(STAGING_DIR)
+		_remove_dir(staging_dir)
 		return _fallback(local_ok, err)
 	if platform == "linux":
 		# Zip extraction doesn't keep the executable bit
-		FileAccess.set_unix_permissions(ProjectSettings.globalize_path(STAGING_DIR + "/" + str(manifest["exe"])),
+		FileAccess.set_unix_permissions(ProjectSettings.globalize_path(staging_dir + "/" + str(manifest["exe"])),
 			FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_WRITE_OWNER | FileAccess.UNIX_EXECUTE_OWNER \
 			| FileAccess.UNIX_READ_GROUP | FileAccess.UNIX_EXECUTE_GROUP \
 			| FileAccess.UNIX_READ_OTHER | FileAccess.UNIX_EXECUTE_OTHER)
-	_remove_dir(INSTALL_DIR)
-	if DirAccess.rename_absolute(ProjectSettings.globalize_path(STAGING_DIR), ProjectSettings.globalize_path(INSTALL_DIR)) != OK:
+	_remove_dir(install_dir)
+	if DirAccess.rename_absolute(ProjectSettings.globalize_path(staging_dir), ProjectSettings.globalize_path(install_dir)) != OK:
 		return {"ok": false, "message": "Could not move the game into place. Is the game still running?"}
-	var f := FileAccess.open(STATE_PATH, FileAccess.WRITE)
+	var f := FileAccess.open(state_path, FileAccess.WRITE)
 	f.store_string(JSON.stringify(manifest, "\t"))
 	f.close()
 	load_installed()
@@ -162,7 +204,7 @@ func check_and_update(force_reinstall := false) -> Dictionary:
 ## RSA-SHA256 check of `data` against `signature` using the embedded public key
 func verify_signature(data: PackedByteArray, signature: PackedByteArray) -> bool:
 	var key := CryptoKey.new()
-	if key.load_from_string(PUBLIC_KEY, true) != OK:
+	if key.load_from_string(public_key, true) != OK:
 		push_error("Embedded public key is invalid")
 		return false
 	var ctx := HashingContext.new()
@@ -218,6 +260,8 @@ func _manifest_valid(m, release: Dictionary) -> bool:
 			return false
 	if str(m["tag"]) != str(release.get("tag_name", "")):
 		return false  # manifest must belong to this exact release
+	if str(m.get("game", "")) != game_id:
+		return false  # and to this game
 	if str(m.get("platform", "windows")) != platform:
 		return false  # older manifests have no platform and are Windows builds
 	if typeof(m["files"]) != TYPE_DICTIONARY or not m["files"].has(m["exe"]):
@@ -284,7 +328,7 @@ func _remove_dir(path: String) -> void:
 
 func _headers() -> PackedStringArray:
 	var v: String = ProjectSettings.get_setting("application/config/version")
-	return PackedStringArray(["User-Agent: TheDeadlands-Launcher/" + v, "Accept: application/vnd.github+json"])
+	return PackedStringArray(["User-Agent: TeslaGames-Launcher/" + v, "Accept: application/vnd.github+json"])
 
 func _fetch(url: String) -> Dictionary:
 	var http := HTTPRequest.new()

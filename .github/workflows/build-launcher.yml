@@ -1,7 +1,8 @@
 name: Build launcher
 
 # Push a tag like "launcher-v1.0.1" to build and publish a new launcher.
-# (Game builds are published here automatically from the private repo as "game-v..." releases.)
+# (Game builds are published here automatically from the private Tesla-games repo as
+# "deadlands-v..." and "salvage-v..." releases.)
 
 on:
   push:
@@ -60,23 +61,23 @@ jobs:
         run: |
           ~/godot/godot --headless --path . --import
           mkdir -p build
-          ~/godot/godot --headless --path . --export-release "Windows Desktop" build/TheDeadlandsLauncher.exe
-          ~/godot/godot --headless --path . --export-release "Linux" build/TheDeadlandsLauncher.x86_64
+          ~/godot/godot --headless --path . --export-release "Windows Desktop" build/TeslaGamesLauncher.exe
+          ~/godot/godot --headless --path . --export-release "Linux" build/TeslaGamesLauncher.x86_64
           cd build
           # A tarball keeps the executable bit, which a bare download would lose
-          chmod +x TheDeadlandsLauncher.x86_64
-          tar -czf TheDeadlandsLauncher-linux.tar.gz TheDeadlandsLauncher.x86_64
-          sha256sum TheDeadlandsLauncher.exe > TheDeadlandsLauncher.exe.sha256
-          sha256sum TheDeadlandsLauncher-linux.tar.gz > TheDeadlandsLauncher-linux.tar.gz.sha256
+          chmod +x TeslaGamesLauncher.x86_64
+          tar -czf TeslaGamesLauncher-linux.tar.gz TeslaGamesLauncher.x86_64
+          sha256sum TeslaGamesLauncher.exe > TeslaGamesLauncher.exe.sha256
+          sha256sum TeslaGamesLauncher-linux.tar.gz > TeslaGamesLauncher-linux.tar.gz.sha256
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ steps.ver.outputs.tag }}" \
-            launcher/build/TheDeadlandsLauncher.exe launcher/build/TheDeadlandsLauncher.exe.sha256 \
-            launcher/build/TheDeadlandsLauncher-linux.tar.gz launcher/build/TheDeadlandsLauncher-linux.tar.gz.sha256 \
+            launcher/build/TeslaGamesLauncher.exe launcher/build/TeslaGamesLauncher.exe.sha256 \
+            launcher/build/TeslaGamesLauncher-linux.tar.gz launcher/build/TeslaGamesLauncher-linux.tar.gz.sha256 \
             --title "Launcher ${{ steps.ver.outputs.version }}" \
-            --notes "Windows: download **TheDeadlandsLauncher.exe** and run it. Linux: download **TheDeadlandsLauncher-linux.tar.gz**, extract it and run **TheDeadlandsLauncher.x86_64**. It installs the game and keeps it up to date automatically." \
+            --notes "Windows: download **TeslaGamesLauncher.exe** and run it. Linux: download **TeslaGamesLauncher-linux.tar.gz**, extract it and run **TeslaGamesLauncher.x86_64**. Pick a game: the launcher installs it and keeps it up to date automatically." \
             --target "${{ github.sha }}" \
             --latest

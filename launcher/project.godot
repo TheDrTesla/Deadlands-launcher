@@ -1,14 +1,14 @@
-; The Deadlands Launcher — Godot 4.7
+; Tesla Games Launcher — Godot 4.7
 
 config_version=5
 
 [application]
 
-config/name="The Deadlands Launcher"
-config/version="1.0.0"
+config/name="Tesla Games Launcher"
+config/version="2.0.0"
 run/main_scene="res://launcher.tscn"
 config/use_custom_user_dir=true
-config/custom_user_dir_name="TheDeadlandsLauncher"
+config/custom_user_dir_name="TeslaGamesLauncher"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 boot_splash/bg_color=Color(0.0784, 0.0706, 0.0588, 1)
 boot_splash/show_image=false
