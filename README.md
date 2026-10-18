@@ -44,7 +44,7 @@ Every game build is signed by the developer, and each game has its own key. Befo
 
 If any check fails, the update is ignored and your current version keeps working. If your game files get damaged, the launcher notices and asks you to press **Repair**, which downloads them again.
 
-The launcher shows where each game is installed, with an **Open folder** button. By default that's `%APPDATA%\TeslaGamesLauncher\games\<game>\game` (Linux: `~/.local/share/TeslaGamesLauncher/games/<game>/game`). Saves live separately in each game's own folder (`%APPDATA%\TheDeadlands`, `%APPDATA%\CtrlAltSalvage`, `%APPDATA%\LuckyPinball`; Linux: under `~/.local/share/`) and are never touched by updates.
+The launcher shows where each game is installed, with an **Open folder** button. Press **Change folder** to pick another place (for example another drive): an installed game is moved there, inside a folder named after the game. By default each game is installed in `%APPDATA%\TeslaGamesLauncher\games\<game>\game` (Linux: `~/.local/share/TeslaGamesLauncher/games/<game>/game`). Saves live separately in each game's own folder (`%APPDATA%\TheDeadlands`, `%APPDATA%\CtrlAltSalvage`, `%APPDATA%\LuckyPinball`; Linux: under `~/.local/share/`) and are never touched by updates.
 
 ---
 

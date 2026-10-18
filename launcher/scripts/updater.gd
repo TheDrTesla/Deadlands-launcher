@@ -78,11 +78,14 @@ var signature_name := manifest_name + ".sig"
 var game_id: String
 var game_tag_prefix: String
 var public_key: String
-# Each game gets its own folder: user://games/<id>/
+# Each game gets its own folder: user://games/<id>/game, or <install_root>/<id> when the
+# player picked a folder. Its state always stays in user://games/<id>/.
+var install_root := ""               # "" = the default folder
 var install_dir: String
 var staging_dir: String
 var download_path: String
 var state_path: String
+var settings_path: String
 
 var api_base := "https://api.github.com"
 var installed: Dictionary = {}       # manifest of the installed build
@@ -100,11 +103,29 @@ func _init(id: String) -> void:
 	game_tag_prefix = GAMES[id]["tag_prefix"]
 	public_key = GAMES[id]["public_key"]
 	var base := "user://games/" + id
-	install_dir = base + "/game"
-	staging_dir = base + "/game_staging"
-	download_path = base + "/download.zip"
 	state_path = base + "/installed.json"
+	settings_path = base + "/settings.json"
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(base))
+	var root := ""
+	if FileAccess.file_exists(settings_path):
+		var data = JSON.parse_string(FileAccess.get_file_as_string(settings_path))
+		if typeof(data) == TYPE_DICTIONARY:
+			root = str(data.get("install_root", ""))
+	_set_paths(root)
+
+func _set_paths(root: String) -> void:
+	install_root = root
+	if root == "":
+		var base := "user://games/" + game_id
+		install_dir = base + "/game"
+		staging_dir = base + "/game_staging"
+		download_path = base + "/download.zip"
+	else:
+		# Always a folder of our own inside the one the player picked, because updates
+		# delete and replace install_dir. Staging sits next to it so the swap is a rename.
+		install_dir = root.path_join(game_id)
+		staging_dir = install_dir + ".staging"
+		download_path = install_dir + ".download.zip"
 
 func _ready() -> void:
 	# Debug builds can point at a local test server: --api=http://127.0.0.1:8765
@@ -149,6 +170,34 @@ func game_exe_path() -> String:
 func install_path() -> String:
 	var p := ProjectSettings.globalize_path(install_dir)
 	return p.replace("/", "\\") if OS.get_name() == "Windows" else p
+
+## Installs the game in `root`/<id> from now on, moving it there if it's installed.
+## root = "" goes back to the default folder. Returns "" on success, or why it failed.
+func move_to(root: String) -> String:
+	var old_root := install_root
+	var old_dir := ProjectSettings.globalize_path(install_dir)
+	_set_paths(root)
+	var new_dir := ProjectSettings.globalize_path(install_dir)
+	var err := ""
+	if new_dir == old_dir:
+		pass
+	elif new_dir.begins_with(old_dir + "/"):
+		err = "The game can't be moved into its own folder."
+	elif DirAccess.dir_exists_absolute(new_dir) and not _dir_empty(new_dir):
+		err = "%s already exists. Pick another folder." % install_path()
+	elif DirAccess.make_dir_recursive_absolute(new_dir) != OK:
+		err = "Can't create a folder in %s." % root
+	elif DirAccess.dir_exists_absolute(old_dir):
+		err = _move_dir(old_dir, new_dir)
+	if err != "":
+		_set_paths(old_root)
+		return err
+	var f := FileAccess.open(settings_path, FileAccess.WRITE)
+	if f == null:
+		return "Could not save the new folder."
+	f.store_string(JSON.stringify({"install_root": root}))
+	f.close()
+	return ""
 
 ## Checks for a new release and installs it. Returns {"ok": bool, "message": String}.
 ## ok = true means a verified build is installed and ready to play.
@@ -390,6 +439,42 @@ func _remove_dir(path: String) -> void:
 	for file in d.get_files():
 		DirAccess.remove_absolute(abs_path + "/" + file)
 	DirAccess.remove_absolute(abs_path)
+
+static func _dir_empty(abs_path: String) -> bool:
+	var d := DirAccess.open(abs_path)
+	if d == null:
+		return false
+	d.include_hidden = true
+	return d.get_files().is_empty() and d.get_directories().is_empty()
+
+## Moves `from` to `to` (an empty folder): a rename on the same drive, else copy then delete
+func _move_dir(from: String, to: String) -> String:
+	DirAccess.remove_absolute(to)
+	if DirAccess.rename_absolute(from, to) == OK:
+		return ""
+	if not _copy_dir(from, to):
+		_remove_dir(to)
+		return "Could not move the game files. Is the game still running?"
+	_remove_dir(from)
+	return ""
+
+func _copy_dir(from: String, to: String) -> bool:
+	if DirAccess.make_dir_recursive_absolute(to) != OK:
+		return false
+	var d := DirAccess.open(from)
+	if d == null:
+		return false
+	d.include_hidden = true
+	for sub in d.get_directories():
+		if not _copy_dir(from + "/" + sub, to + "/" + sub):
+			return false
+	for file in d.get_files():
+		if DirAccess.copy_absolute(from + "/" + file, to + "/" + file) != OK:
+			return false
+	if platform == "linux":
+		for file in d.get_files():
+			FileAccess.set_unix_permissions(to + "/" + file, FileAccess.get_unix_permissions(from + "/" + file))
+	return true
 
 func _headers() -> PackedStringArray:
 	var v: String = ProjectSettings.get_setting("application/config/version")

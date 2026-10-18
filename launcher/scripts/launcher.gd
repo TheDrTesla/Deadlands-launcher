@@ -53,6 +53,7 @@ var _play: Button
 var _update: Button
 var _repair: Button
 var _path: Label
+var _change: Button
 var _notes: RichTextLabel
 var _version: Label
 var _banner: Button
@@ -133,6 +134,11 @@ func _ready() -> void:
 	open.tooltip_text = "Show the game's files on this computer"
 	open.pressed.connect(_open_folder)
 	path_row.add_child(open)
+	_change = Button.new()
+	_change.text = "Change folder"
+	_change.tooltip_text = "Pick where this game is installed. An installed game is moved there."
+	_change.pressed.connect(_pick_folder)
+	path_row.add_child(_change)
 
 	_status = _label("Starting...", 15, TEXT)
 	root.add_child(_status)
@@ -243,6 +249,7 @@ func _lock(on: bool) -> void:
 	_play.disabled = on
 	_update.disabled = on
 	_repair.disabled = on
+	_change.disabled = on
 	for id in _game_buttons:
 		_game_buttons[id].disabled = on and id != _game
 
@@ -277,7 +284,7 @@ func _show(res: Dictionary) -> void:
 	if _update.visible:
 		_update.text = "Update to %s" % new["version"]
 	_repair.visible = has_game
-	_path.text = ("Installed in: %s" if has_game else "Will be installed in: %s") % updater.install_path()
+	_show_path()
 
 	var mine: String = ProjectSettings.get_setting("application/config/version")
 	_version.text = "Game %s\nLauncher %s" % [updater.installed_version() if has_game else "—", mine]
@@ -293,6 +300,43 @@ func _show(res: Dictionary) -> void:
 
 static func _size(bytes) -> String:
 	return "%.1f MB" % (float(bytes) / 1048576.0)
+
+func _show_path() -> void:
+	_path.text = ("Installed in: %s" if updater.is_installed() else "Will be installed in: %s") % updater.install_path()
+	_path.tooltip_text = updater.install_path()
+
+func _pick_folder() -> void:
+	var d := FileDialog.new()
+	d.title = "Choose where to install %s" % Updater.GAMES[_game]["title"]
+	d.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	d.access = FileDialog.ACCESS_FILESYSTEM
+	d.use_native_dialog = true
+	d.current_dir = ProjectSettings.globalize_path(updater.install_dir).get_base_dir()
+	d.dir_selected.connect(_move_game)
+	d.visibility_changed.connect(func(): if not d.visible: d.queue_free())
+	add_child(d)
+	d.popup_centered_ratio(0.6)
+
+## Installs the selected game in `dir` from now on, moving it there if it's installed
+func _move_game(dir: String) -> void:
+	if _busy:
+		return
+	var play_was_disabled := _play.disabled
+	_lock(true)
+	_status.text = "Moving %s..." % Updater.GAMES[_game]["title"]
+	_status.remove_theme_color_override("font_color")
+	await get_tree().process_frame
+	var err := updater.move_to(dir)
+	_lock(false)
+	_play.disabled = play_was_disabled
+	_show_path()
+	if err != "":
+		_status.text = err
+		_status.add_theme_color_override("font_color", BAD)
+	else:
+		_status.text = "%s will now be installed in %s" % [Updater.GAMES[_game]["title"], updater.install_path()] \
+			if not updater.is_installed() else "Moved to %s" % updater.install_path()
+		_status.add_theme_color_override("font_color", GOOD)
 
 func _open_folder() -> void:
 	var p := ProjectSettings.globalize_path(updater.install_dir)
